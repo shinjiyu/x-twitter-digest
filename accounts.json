@@ -1,0 +1,25 @@
+{
+  "hours_window": 8,
+  "count_per_account": 20,
+  "accounts": [
+    { "screen_name": "HTC", "camp": "A" },
+    { "screen_name": "ASUS", "camp": "A" },
+    { "screen_name": "msigaming", "camp": "A" },
+    { "screen_name": "MediaTek", "camp": "A" },
+    { "screen_name": "acer", "camp": "A" },
+    { "screen_name": "dylan522p", "camp": "A" },
+    { "screen_name": "trendforce", "camp": "A" },
+    { "screen_name": "DIGITIMES", "camp": "A" },
+    { "screen_name": "IanEaston1", "camp": "B" },
+    { "screen_name": "BonnyLin4", "camp": "B" },
+    { "screen_name": "brianhioe", "camp": "B" },
+    { "screen_name": "GlobalTaiwan", "camp": "B" },
+    { "screen_name": "RandalSchriver", "camp": "B" },
+    { "screen_name": "changlept", "camp": "B" },
+    { "screen_name": "KharisTempleman", "camp": "B" },
+    { "screen_name": "shashj", "camp": "C" },
+    { "screen_name": "BonnieGlaser", "camp": "C" },
+    { "screen_name": "joshuakucera", "camp": "C" },
+    { "screen_name": "Wang_Maya", "camp": "C" }
+  ]
+}

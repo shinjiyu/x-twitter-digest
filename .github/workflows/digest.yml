@@ -1,0 +1,58 @@
+name: X Twitter Digest
+
+on:
+  schedule:
+    - cron: "0 */8 * * *"
+  workflow_dispatch:
+    inputs:
+      hours_window:
+        description: "只保留过去 N 小时推文（0=不过滤）"
+        required: false
+        default: "8"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: x-twitter-digest
+  cancel-in-progress: true
+
+jobs:
+  collect-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Write X cookies from secret
+        env:
+          X_COOKIES_JSON: ${{ secrets.X_COOKIES_JSON }}
+        run: |
+          if [ -n "$X_COOKIES_JSON" ]; then
+            printf '%s' "$X_COOKIES_JSON" > .cookies.json
+            echo "cookies written"
+          else
+            echo "WARN: X_COOKIES_JSON empty — guest auth only"
+          fi
+
+      - name: Collect + build HTML
+        env:
+          X_COOKIE_FILE: ${{ github.workspace }}/.cookies.json
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          TWITTER_HOURS_WINDOW: ${{ github.event.inputs.hours_window || '8' }}
+          TWITTER_FETCH_SLEEP: "1.5"
+        run: python scripts/run_collect.py
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
