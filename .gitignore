@@ -4,3 +4,7 @@ __pycache__/
 .cookies.json
 .env
 .venv/
+artifact-*/
+site-preview*/
+site-final/
+pages.json
