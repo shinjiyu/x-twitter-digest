@@ -1,27 +1,30 @@
 # x-twitter-digest
 
-独立仓库：定时采集 X/Twitter 名单 → 生成静态 HTML → 部署 GitHub Pages。
+定时采集 X/Twitter → 静态 HTML → **GitHub Pages**，并像 [agent-harness-articles](https://github.com/shinjiyu/agent-harness-articles) 一样 **commit 归档**，历史不会丢。
 
-与 Kuroneko Agent / 微信推送无关；只做网页。
+## 行为
+
+| 步骤 | 说明 |
+|------|------|
+| 采集 | `scripts/fetch_tweets.py`（cookie 优先，否则 guest） |
+| 翻译 | **X 自带** `translations/show.json`（需 `X_COOKIES_JSON` 更稳） |
+| 页面 | `site/index.html` = 最新 |
+| 归档 | `site/archive/<UTC时间戳>/` + `site/archive/index.html` 列表，并 `git push` |
 
 ## 本地
 
 ```bash
-# cookies: {"auth_token":"...","ct0":"..."}
-export X_COOKIE_FILE=/path/to/cookies.json
-export ZHIPU_API_KEY=...   # 可选
-
+export X_COOKIE_FILE=/path/to/cookies.json   # {"auth_token":"...","ct0":"..."}
 python scripts/run_collect.py
-# 打开 site/index.html
+python scripts/archive_site.py
+# 打开 site/index.html 与 site/archive/
 ```
-
-改名单：编辑 `accounts.json`（`scripts/gen_table.py` 里 `CAMP_MAP` 建议同步）。
 
 ## GitHub
 
-1. 新建空仓库，把本目录 push 上去  
-2. Secrets：`X_COOKIES_JSON`（建议）、`ZHIPU_API_KEY`（可选）  
-3. Settings → Pages → Source = **GitHub Actions**  
-4. 跑 workflow **X Twitter Digest**（默认每 8 小时）
+1. Secrets：`X_COOKIES_JSON`（强烈建议；guest 翻译常失败）
+2. Pages → Source = **GitHub Actions**
+3. Workflow **X Twitter Digest**（默认每 8 小时；也可手动）
 
-固定 URL 即最新摘要页；需要提醒时再另接 Server酱 / 本机微信 Bot 发链接。
+在线最新：`https://<user>.github.io/x-twitter-digest/`  
+历史：`.../archive/`

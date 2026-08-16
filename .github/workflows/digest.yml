@@ -8,10 +8,10 @@ on:
       hours_window:
         description: "只保留过去 N 小时推文（0=不过滤）"
         required: false
-        default: "8"
+        default: "168"
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -37,16 +37,33 @@ jobs:
             printf '%s' "$X_COOKIES_JSON" > .cookies.json
             echo "cookies written"
           else
-            echo "WARN: X_COOKIES_JSON empty — guest auth only"
+            echo "WARN: X_COOKIES_JSON empty — guest auth; X translate may fail"
           fi
 
       - name: Collect + build HTML
         env:
           X_COOKIE_FILE: ${{ github.workspace }}/.cookies.json
-          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
-          TWITTER_HOURS_WINDOW: ${{ github.event.inputs.hours_window || '8' }}
+          TWITTER_HOURS_WINDOW: ${{ github.event.inputs.hours_window || '168' }}
           TWITTER_FETCH_SLEEP: "1.5"
+          TWITTER_TRANSLATE_SLEEP: "0.35"
+          TWITTER_TRANSLATE_DEST: "zh"
         run: python scripts/run_collect.py
+
+      - name: Archive snapshot under site/archive
+        run: python scripts/archive_site.py
+
+      - name: Commit archive + latest site
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/
+          if git diff --staged --quiet; then
+            echo "No site changes to commit"
+          else
+            git commit -m "chore(digest): archive $(date -u +%Y-%m-%dT%H%MZ)"
+            git push
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

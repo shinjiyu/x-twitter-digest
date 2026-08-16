@@ -12,7 +12,6 @@ import json
 import sys
 import os
 import glob
-import re
 from datetime import datetime, timezone, timedelta
 
 # ── 阵营映射 ──────────────────────────────────────────────
@@ -43,96 +42,12 @@ CAMP_MAP = {
 
 CAMP_ORDER = {"A": 0, "B": 1, "C": 2, "Z": 9}
 
-# ── 中文摘要关键词匹配规则 ─────────────────────────────────
-SUMMARY_RULES = [
-    # 半导体/芯片
-    (["chip", "semiconductor", "wafer", "foundry", "TSMC", "ASML", "AMD", "Nvidia", "NVDA", "GPU", "HBM"],
-     "半导体/芯片产业链"),
-    (["capex", "capital expenditure", "spending", "data center", "hyperscaler"],
-     "资本开支/数据中心"),
-    (["earnings", "revenue", "guidance", "quarter", "Q1", "Q2", "Q3", "Q4", "beat", "miss"],
-     "财报/业绩"),
-    (["bubble", "overvalued", "short", "bearish", "crash", "froth", "specul"],
-     "看空/泡沫警告"),
-    (["AI", "artificial intelligence", "LLM", "GPT", "model", "training", "inference"],
-     "AI技术/模型"),
-    (["rate", "Fed", "interest", "yield", "treasury", "inflation", "CPI"],
-     "宏观/利率/通胀"),
-    (["supply chain", "shortage", "inventory", "demand", "capacity"],
-     "供需/库存"),
-    (["valuation", "PE", "P/E", "multiple", "DCF", "discount"],
-     "估值分析"),
-    (["options", "put", "call", "hedge", "volatility", "VIX"],
-     "期权/波动率"),
-    (["risk", "credit", "leverage", "debt", "default"],
-     "风险/信用"),
-]
-
-# 中文关键词
-SUMMARY_RULES_CN = [
-    (["半导体", "芯片", "晶圆", "代工", "光刻"], "半导体/芯片产业链"),
-    (["资本开支", "capex", "数据中心", "算力"], "资本开支/数据中心"),
-    (["财报", "营收", "业绩", "指引", "盈利"], "财报/业绩"),
-    (["泡沫", "高估", "做空", "熊市", "崩盘"], "看空/泡沫警告"),
-    (["估值", "PE", "市盈率", "折现"], "估值分析"),
-    (["利率", "通胀", "美联储", "降息", "加息"], "宏观/利率/通胀"),
-    (["供应链", "短缺", "库存", "需求", "产能"], "供需/库存"),
-    (["期权", "对冲", "波动率", "风险"], "期权/波动率"),
-    (["AI", "人工智能", "模型", "训练", "推理"], "AI技术/模型"),
-    (["风险", "信用", "杠杆", "债务", "违约"], "风险/信用"),
-]
-
-
-def generate_summary(text):
-    """调用智谱GLM API将英文推文翻译为简洁中文摘要（50字以内）。"""
-    import os
-    import json
-    import urllib.request
-
-    api_key = os.environ.get('ZHIPU_API_KEY', '')
-    if not api_key or not text or not text.strip():
-        return text[:50] + "(翻译失败)" if text else ""
-
-    prompt = (
-        "请将以下英文推文翻译成简洁的中文摘要，要求50字以内，"
-        "只输出中文翻译结果，不要加任何解释或多余内容：\n\n" + text[:500]
-    )
-
-    payload = {
-        "model": "glm-4-flash",
-        "messages": [
-            {"role": "user", "content": prompt}
-        ],
-        "temperature": 0.3,
-        "max_tokens": 120,
-    }
-
-    url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + api_key,
-    }
-
-    try:
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers=headers,
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-        summary = result["choices"][0]["message"]["content"].strip()
-        if not summary:
-            return text[:50] + "(翻译失败)"
-        return summary
-    except Exception:
-        return text[:50] + "(翻译失败)"
+# ── 中文摘要：优先 X 原生翻译（见 x_translate.py）────────────
 
 
 def truncate(text, max_len=200):
     """截断文本到指定长度。"""
-    text = text.replace("\n", " ").strip()
+    text = (text or "").replace("\n", " ").strip()
     if len(text) > max_len:
         return text[:max_len] + "..."
     return text
@@ -155,12 +70,12 @@ def parse_created_at(created_at_str):
 
 
 def hours_window():
-    """日历对齐：默认只保留过去 N 小时内的推文（TWITTER_HOURS_WINDOW，默认 8）。0=不过滤。"""
-    raw = os.environ.get("TWITTER_HOURS_WINDOW", "8").strip()
+    """日历对齐：TWITTER_HOURS_WINDOW，默认 168。0=不过滤。"""
+    raw = os.environ.get("TWITTER_HOURS_WINDOW", "168").strip()
     try:
         return max(0, int(raw))
     except ValueError:
-        return 8
+        return 168
 
 
 def filter_by_hours_window(records, hours):
@@ -223,7 +138,9 @@ def load_tweets(tweet_dir):
                 "created_at_fmt": parse_created_at(tweet.get("created_at", "")),
                 "full_text": full_text,
                 "full_text_en_200": truncate(full_text, 200),
-                "summary": generate_summary(full_text),
+                "lang": tweet.get("lang", ""),
+                "summary": "",
+                "summary_source": "",
                 "retweet_count": tweet.get("retweet_count", 0),
                 "favorite_count": tweet.get("favorite_count", 0),
                 "reply_count": tweet.get("reply_count", 0),
@@ -236,29 +153,22 @@ def load_tweets(tweet_dir):
 
 
 def generate_analysis(records):
-    """调用 GLM-4-flash 生成 100-200 字中文趋势分析。"""
-    import os, json, urllib.request
-    try:
-        tweets_text = "\n".join(
-            f"@{r.get('screen_name','')}: {(r.get('full_text_en_200') or '')[:100]}"
-            for r in records[:50]
-        )
-        prompt = f"请用100-200字中文总结以下推文的整体趋势和重点：\n{tweets_text}"
-        api_key = os.environ.get("ZHIPU_API_KEY", "")
-        url = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
-        payload = json.dumps({
-            "model": "glm-4-flash",
-            "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 300,
-        }).encode("utf-8")
-        req = urllib.request.Request(url, data=payload, method="POST")
-        req.add_header("Authorization", f"Bearer {api_key}")
-        req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-        return result["choices"][0]["message"]["content"].strip()
-    except Exception:
-        return "本轮暂无分析。"
+    """本地汇总，不依赖外部 LLM。"""
+    if not records:
+        return "本轮时间窗内无推文。"
+    by_user = {}
+    for r in records:
+        sn = r.get("screen_name") or "?"
+        by_user.setdefault(sn, {"n": 0, "fav": 0})
+        by_user[sn]["n"] += 1
+        by_user[sn]["fav"] += int(r.get("favorite_count") or 0)
+    top = sorted(by_user.items(), key=lambda x: (x[1]["fav"], x[1]["n"]), reverse=True)[:5]
+    bits = [f"@{u} {v['n']}条/赞{v['fav']}" for u, v in top]
+    src = sum(1 for r in records if r.get("summary_source") == "x_translate")
+    return (
+        f"共 {len(records)} 条；X 翻译成功 {src} 条。"
+        f"互动靠前：{'；'.join(bits) if bits else '无'}。"
+    )
 
 
 def generate_html(records, hours=0):
@@ -302,7 +212,7 @@ def generate_html(records, hours=0):
         sections.append(
             f"<section class=\"camp\"><h2>{emoji} {name}</h2>"
             "<div class=\"table-wrap\"><table>"
-            "<thead><tr><th>发博时间</th><th>博主</th><th>英文原文</th><th>中文核心观点</th>"
+            "<thead><tr><th>发博时间</th><th>博主</th><th>原文</th><th>中文（X翻译）</th>"
             "<th>转发</th><th>点赞</th><th>回复</th></tr></thead>"
             f"<tbody>{''.join(rows)}</tbody>"
             f"<tfoot><tr class=\"sum\"><td colspan=\"4\">阵营互动汇总（{len(camp_records)} 条）</td>"
@@ -341,7 +251,7 @@ def generate_html(records, hours=0):
     meta_html = " · ".join(meta_bits)
 
     analysis_text = generate_analysis(records)
-    analysis_html = f'<section class="camp"><h2>📊 个人分析</h2><p style="line-height:1.8;color:#ccc;">{analysis_text}</p></section>'
+    analysis_html = f'<section class="camp"><h2>📊 本轮摘要</h2><p style="line-height:1.8;color:#ccc;">{analysis_text}</p></section>'
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -424,6 +334,14 @@ def main():
     if not raw_records:
         print("[WARN] 未找到任何推文数据，仍写出空报告页")
 
+    print("[STEP 1b] X 原生翻译（translations/show）...")
+    if script_dir not in sys.path:
+        sys.path.insert(0, script_dir)
+    from x_translate import translate_records
+
+    sleep_s = float(os.environ.get("TWITTER_TRANSLATE_SLEEP", "0.35"))
+    translate_records(records, dest=os.environ.get("TWITTER_TRANSLATE_DEST", "zh"), sleep_s=sleep_s)
+
     # 生成 JSON（空窗也写 []，保证页面可更新）
     print("[STEP 2] 生成 tweets_summary.json...")
     json_path = os.path.join(workspace_dir, "tweets_summary.json")
@@ -440,6 +358,7 @@ def main():
             "full_text": r["full_text"],
             "full_text_en_200": r["full_text_en_200"],
             "summary": r["summary"],
+            "summary_source": r.get("summary_source", ""),
             "retweet_count": r["retweet_count"],
             "favorite_count": r["favorite_count"],
             "reply_count": r["reply_count"],
