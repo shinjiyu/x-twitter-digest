@@ -48,28 +48,41 @@ def _headers(cookies=None, guest_token=None):
     return h
 
 
+# After first confirmed X 404, skip further X attempts this process.
+_X_DEAD = False
+
+
 def translate_via_x(tweet_id: str, dest: str = "zh") -> str | None:
-    if not tweet_id:
+    global _X_DEAD
+    if _X_DEAD or not tweet_id:
         return None
     cookies, _ = load_cookies()
     guest = None
     if not cookies:
         guest = get_guest_token()
         if not guest:
+            _X_DEAD = True
             return None
 
-    for dest_try in (dest, "zh-cn", "zh-CN", "zh-Hans"):
+    saw_404 = False
+    for dest_try in (dest, "zh-cn"):
         qs = urllib.parse.urlencode({"id": str(tweet_id), "dest": dest_try})
         headers = _headers(cookies=cookies, guest_token=guest)
         for base in TRANSLATE_URLS:
             url = f"{base}?{qs}"
             req = urllib.request.Request(url, headers=headers)
             try:
-                with urllib.request.urlopen(req, context=SSL_CTX, timeout=20) as resp:
+                with urllib.request.urlopen(req, context=SSL_CTX, timeout=15) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    saw_404 = True
+                if os.environ.get("DEBUG_TRANSLATE"):
+                    print(f"  [x-translate] {tweet_id}: HTTP {e.code}", flush=True)
+                continue
             except Exception as e:
                 if os.environ.get("DEBUG_TRANSLATE"):
-                    print(f"  [x-translate] {tweet_id} {base}: {e}", flush=True)
+                    print(f"  [x-translate] {tweet_id}: {e}", flush=True)
                 continue
             text = (
                 data.get("translation")
@@ -82,6 +95,9 @@ def translate_via_x(tweet_id: str, dest: str = "zh") -> str | None:
             text = (text or "").strip()
             if text:
                 return text
+    if saw_404:
+        _X_DEAD = True
+        print("  [x-translate] endpoint 404 — skip X for rest of run, use gtx", flush=True)
     return None
 
 
