@@ -11,7 +11,27 @@
 | 页面 | `site/index.html` = 最新 |
 | 归档 | `site/archive/<UTC时间戳>/` + `site/archive/index.html` 列表，并 `git push` |
 
-## 本地
+## 配置名单与分组
+
+编辑根目录 `accounts.json`：
+
+```json
+{
+  "title": "台海观察 · X 摘要",
+  "camps": {
+    "A": { "name": "台湾科技产业", "emoji": "◆", "order": 0, "color": "#1d9a6c" }
+  },
+  "accounts": [
+    { "screen_name": "HTC", "camp": "A" }
+  ]
+}
+```
+
+改完 push 后，下次 Actions 会按新分组出页。无需改 Python。
+
+## 时间轴
+
+`site/archive/manifest.json` 列出历史快照；页面顶部时间轴可切「最新 / 各次归档」。
 
 ```bash
 export X_COOKIE_FILE=/path/to/cookies.json   # {"auth_token":"...","ct0":"..."}

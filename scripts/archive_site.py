@@ -1,28 +1,122 @@
 #!/usr/bin/env python3
-"""Snapshot current site/ into site/archive/<stamp>/ and refresh archive index."""
+"""Snapshot site/ → site/archive/<stamp>/ + manifest + timeline-aware HTML."""
 
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+SCRIPT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIR))
+
+from config_loader import load_config
+from gen_table import records_from_summary, write_outputs
+
+ROOT = SCRIPT_DIR.parent
 SITE = ROOT / "site"
 ARCHIVE = SITE / "archive"
 
 
-def esc(s: str) -> str:
-    return (
-        (s or "")
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
+def collect_entries() -> list[dict]:
+    entries = []
+    if not ARCHIVE.is_dir():
+        return entries
+    for p in sorted(ARCHIVE.iterdir(), reverse=True):
+        if not p.is_dir():
+            continue
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{4}Z", p.name):
+            continue
+        meta = {
+            "stamp": p.name,
+            "kept_count": None,
+            "hours_window": None,
+            "archived_at": None,
+        }
+        mpath = p / "meta.json"
+        if mpath.is_file():
+            try:
+                m = json.loads(mpath.read_text(encoding="utf-8"))
+                meta.update(
+                    {
+                        "kept_count": m.get("kept_count"),
+                        "hours_window": m.get("hours_window"),
+                        "archived_at": m.get("archived_at") or m.get("generated_at"),
+                    }
+                )
+            except json.JSONDecodeError:
+                pass
+        entries.append(meta)
+    return entries
+
+
+def write_manifest(entries: list[dict]) -> Path:
+    ARCHIVE.mkdir(parents=True, exist_ok=True)
+    path = ARCHIVE / "manifest.json"
+    payload = {
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "count": len(entries),
+        "entries": entries,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # lightweight listing page
+    lines = [
+        "<!DOCTYPE html><html lang='zh-CN'><head><meta charset='UTF-8'/>",
+        "<meta name='viewport' content='width=device-width, initial-scale=1'/>",
+        "<title>归档索引</title></head><body style='font-family:sans-serif;padding:24px'>",
+        "<h1>归档</h1><p><a href='../'>最新</a></p><ul>",
+    ]
+    for e in entries:
+        st = e["stamp"]
+        lines.append(
+            f"<li><a href='{st}/'>{st}</a> · 推文 {e.get('kept_count')} · 窗 {e.get('hours_window')}h</li>"
+        )
+    lines.append("</ul></body></html>")
+    (ARCHIVE / "index.html").write_text("\n".join(lines), encoding="utf-8")
+    return path
+
+
+def refresh_html(cfg: dict, entries: list[dict], stamp: str) -> None:
+    """Rebuild latest + this stamp pages so timeline is consistent."""
+    summary = SITE / "tweets_summary.json"
+    if not summary.is_file():
+        return
+    records, data = records_from_summary(summary, cfg)
+    hours = int(data.get("hours_window") or 0)
+    raw_count = int(data.get("raw_count") or len(records))
+    dropped = int(data.get("dropped_count") or 0)
+
+    write_outputs(
+        records,
+        cfg=cfg,
+        hours=hours,
+        raw_count=raw_count,
+        dropped=dropped,
+        workspace_dir=str(SITE),
+        timeline=entries,
+        page_kind="latest",
+        current_stamp=None,
     )
+
+    dest = ARCHIVE / stamp
+    # archive page uses same tweet set as this snapshot
+    dest_summary = dest / "tweets_summary.json"
+    if dest_summary.is_file():
+        arec, adata = records_from_summary(dest_summary, cfg)
+        write_outputs(
+            arec,
+            cfg=cfg,
+            hours=int(adata.get("hours_window") or hours),
+            raw_count=int(adata.get("raw_count") or len(arec)),
+            dropped=int(adata.get("dropped_count") or 0),
+            workspace_dir=str(dest),
+            timeline=entries,
+            page_kind="archive",
+            current_stamp=stamp,
+        )
 
 
 def main() -> int:
@@ -57,70 +151,13 @@ def main() -> int:
         json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
 
-    # Build archive listing (newest first)
-    entries = []
-    if ARCHIVE.is_dir():
-        for p in sorted(ARCHIVE.iterdir(), reverse=True):
-            if not p.is_dir() or p.name == "index.html":
-                continue
-            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{4}Z", p.name):
-                continue
-            mpath = p / "meta.json"
-            kept = "?"
-            hours = "?"
-            if mpath.is_file():
-                try:
-                    m = json.loads(mpath.read_text(encoding="utf-8"))
-                    kept = str(m.get("kept_count", "?"))
-                    hours = str(m.get("hours_window", "?"))
-                except json.JSONDecodeError:
-                    pass
-            entries.append((p.name, kept, hours))
-
-    rows = "".join(
-        f'<li><a href="{esc(name)}/">{esc(name)}</a>'
-        f" · 推文 {esc(kept)} · 窗 {esc(hours)}h</li>\n"
-        for name, kept, hours in entries
-    )
-    listing = f"""<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>历史摘要归档</title>
-<style>
-  body {{ margin:0; padding:24px; background:#1a1a2e; color:#e0e0e0;
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; }}
-  h1 {{ color:#e94560; font-size:1.25rem; }}
-  a {{ color:#7fdbff; }}
-  li {{ margin:8px 0; }}
-</style>
-</head>
-<body>
-  <h1>历史摘要归档</h1>
-  <p><a href="../">← 返回最新</a></p>
-  <ul>
-{rows or "    <li>（暂无）</li>"}
-  </ul>
-</body>
-</html>
-"""
-    ARCHIVE.mkdir(parents=True, exist_ok=True)
-    (ARCHIVE / "index.html").write_text(listing, encoding="utf-8")
-
-    # Inject history link into latest index if missing
-    html = index.read_text(encoding="utf-8")
-    if 'href="archive/"' not in html and "href='archive/'" not in html:
-        link = '<p class="meta"><a href="archive/" style="color:#7fdbff">历史归档</a></p>\n'
-        if '<div class="meta">' in html:
-            html = html.replace('<div class="meta">', link + '<div class="meta">', 1)
-        else:
-            html = html.replace("</h1>", "</h1>\n  " + link, 1)
-        index.write_text(html, encoding="utf-8")
-        shutil.copy2(index, dest / "index.html")
+    entries = collect_entries()
+    write_manifest(entries)
+    cfg = load_config()
+    refresh_html(cfg, entries, stamp)
 
     print(f"[OK] archived → {dest}")
-    print(f"[OK] listing → {ARCHIVE / 'index.html'} ({len(entries)} entries)")
+    print(f"[OK] manifest entries={len(entries)}")
     return 0
 
 
