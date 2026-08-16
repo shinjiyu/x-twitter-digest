@@ -411,7 +411,7 @@ def main():
         out_dir = os.path.dirname(output_file)
         if out_dir:
             os.makedirs(out_dir, exist_ok=True)
-        with open(output_file, "w") as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump(result, f, ensure_ascii=False, indent=2)
         print(f"  [INFO] Saved error result to {output_file}")
         sys.exit(1)
@@ -453,7 +453,7 @@ def main():
         raw_dir = os.path.dirname(raw_file)
         if raw_dir:
             os.makedirs(raw_dir, exist_ok=True)
-        with open(raw_file, "w") as f:
+        with open(raw_file, "w", encoding="utf-8") as f:
             json.dump(tweets_data, f, ensure_ascii=False, indent=2)
         print(f"  [INFO] Raw response saved to {raw_file}")
 
@@ -471,7 +471,7 @@ def main():
     out_dir = os.path.dirname(output_file)
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
-    with open(output_file, "w") as f:
+    with open(output_file, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
     print(f"  [DONE] Saved {len(result['tweets'])} tweets to {output_file}")

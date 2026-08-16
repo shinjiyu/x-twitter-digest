@@ -1,5 +1,5 @@
 {
-  "hours_window": 8,
+  "hours_window": 168,
   "count_per_account": 20,
   "accounts": [
     { "screen_name": "HTC", "camp": "A" },
