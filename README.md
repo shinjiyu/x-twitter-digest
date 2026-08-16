@@ -7,7 +7,7 @@
 | 步骤 | 说明 |
 |------|------|
 | 采集 | `scripts/fetch_tweets.py`（cookie 优先，否则 guest） |
-| 翻译 | **X 自带** `translations/show.json`（需 `X_COOKIES_JSON` 更稳） |
+| 翻译 | 优先 X；接口 404 时自动 **Google 机翻（gtx）** |
 | 页面 | `site/index.html` = 最新 |
 | 归档 | `site/archive/<UTC时间戳>/` + `site/archive/index.html` 列表，并 `git push` |
 

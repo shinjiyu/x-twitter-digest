@@ -138,8 +138,8 @@ def generate_analysis(records) -> str:
         by_user[sn]["fav"] += int(r.get("favorite_count") or 0)
     top = sorted(by_user.items(), key=lambda x: (x[1]["fav"], x[1]["n"]), reverse=True)[:5]
     bits = [f"@{u} {v['n']}条 · 赞{v['fav']}" for u, v in top]
-    src = sum(1 for r in records if r.get("summary_source") == "x_translate")
-    return f"共 {len(records)} 条，X 翻译 {src} 条。互动靠前：{' · '.join(bits) if bits else '无'}。"
+    src = sum(1 for r in records if r.get("summary_source") in ("x_translate", "gtx"))
+    return f"共 {len(records)} 条，已翻译 {src} 条。互动靠前：{' · '.join(bits) if bits else '无'}。"
 
 
 def load_timeline_manifest(site_dir: str | Path) -> list[dict]:
@@ -186,6 +186,7 @@ def generate_html(
             href = f"https://x.com/{sn}/status/{tid}" if tid else f"https://x.com/{sn}"
             src_badge = {
                 "x_translate": "X 翻译",
+                "gtx": "机翻",
                 "original": "原文",
                 "fallback": "未译",
             }.get(r.get("summary_source") or "", "")
